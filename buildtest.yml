@@ -1,0 +1,1265 @@
+# Volume Slider - build APK otomatis di GitHub Actions
+# Seluruh kode aplikasi ada di dalam berkas ini. Tidak perlu PC.
+name: Build APK Volume Slider
+
+on: [push, workflow_dispatch]
+
+permissions:
+  contents: write
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Pasang Java 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: "17"
+
+      - name: Siapkan Android SDK
+        run: |
+          SDKM="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          [ -x "$SDKM" ] || SDKM="$(command -v sdkmanager || true)"
+          if [ -n "$SDKM" ]; then
+            yes | "$SDKM" --licenses > /dev/null || true
+            "$SDKM" "platforms;android-35" "build-tools;34.0.0" > /dev/null || true
+          fi
+
+      - name: Unduh Gradle
+        run: |
+          curl -fsSL https://services.gradle.org/distributions/gradle-8.10.2-bin.zip -o gradle.zip
+          unzip -q gradle.zip
+
+      - name: "Tulis settings.gradle"
+        run: |
+          mkdir -p "proj/"
+          cat > "proj/settings.gradle" <<'__BERKAS_SELESAI__'
+          pluginManagement {
+              repositories {
+                  google()
+                  mavenCentral()
+                  gradlePluginPortal()
+              }
+          }
+          dependencyResolutionManagement {
+              repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+              repositories {
+                  google()
+                  mavenCentral()
+              }
+          }
+          rootProject.name = "VolumeSlider"
+          include ':app'
+          __BERKAS_SELESAI__
+
+      - name: "Tulis build.gradle"
+        run: |
+          mkdir -p "proj/"
+          cat > "proj/build.gradle" <<'__BERKAS_SELESAI__'
+          plugins {
+              id 'com.android.application' version '8.7.3' apply false
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis gradle.properties"
+        run: |
+          mkdir -p "proj/"
+          cat > "proj/gradle.properties" <<'__BERKAS_SELESAI__'
+          org.gradle.jvmargs=-Xmx2048m -Dfile.encoding=UTF-8
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/build.gradle"
+        run: |
+          mkdir -p "proj/app"
+          cat > "proj/app/build.gradle" <<'__BERKAS_SELESAI__'
+          plugins {
+              id 'com.android.application'
+          }
+
+          android {
+              namespace 'com.pribadi.volume'
+              compileSdk 35
+
+              defaultConfig {
+                  applicationId 'com.pribadi.volume'
+                  minSdk 26
+                  targetSdk 34
+                  versionCode 1
+                  versionName '1.0'
+              }
+
+              signingConfigs {
+                  debug {
+                      storeFile file('debug.keystore')
+                      storeType 'pkcs12'
+                      storePassword 'android'
+                      keyAlias 'androiddebugkey'
+                      keyPassword 'android'
+                  }
+              }
+
+              buildTypes {
+                  debug {
+                      signingConfig signingConfigs.debug
+                  }
+              }
+
+              compileOptions {
+                  sourceCompatibility JavaVersion.VERSION_17
+                  targetCompatibility JavaVersion.VERSION_17
+              }
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/AndroidManifest.xml"
+        run: |
+          mkdir -p "proj/app/src/main"
+          cat > "proj/app/src/main/AndroidManifest.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+              <uses-permission android:name="android.permission.SYSTEM_ALERT_WINDOW" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE" />
+              <uses-permission android:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE" />
+              <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
+              <uses-permission android:name="android.permission.ACCESS_NOTIFICATION_POLICY" />
+              <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED" />
+
+              <application
+                  android:allowBackup="true"
+                  android:icon="@mipmap/ic_launcher"
+                  android:label="Volume"
+                  android:theme="@style/AppTheme">
+
+                  <activity
+                      android:name=".MainActivity"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.MAIN" />
+                          <category android:name="android.intent.category.LAUNCHER" />
+                      </intent-filter>
+                  </activity>
+
+                  <service
+                      android:name=".BubbleService"
+                      android:exported="false"
+                      android:foregroundServiceType="specialUse">
+                      <property
+                          android:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE"
+                          android:value="gelembung kontrol volume mengambang" />
+                  </service>
+
+                  <receiver
+                      android:name=".BootReceiver"
+                      android:exported="true">
+                      <intent-filter>
+                          <action android:name="android.intent.action.BOOT_COMPLETED" />
+                      </intent-filter>
+                  </receiver>
+              </application>
+          </manifest>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/res/values/colors.xml"
+        run: |
+          mkdir -p "proj/app/src/main/res/values"
+          cat > "proj/app/src/main/res/values/colors.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <color name="ic_bg">#FF2FB67E</color>
+          </resources>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/res/values/themes.xml"
+        run: |
+          mkdir -p "proj/app/src/main/res/values"
+          cat > "proj/app/src/main/res/values/themes.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="android:Theme.Material.Light.NoActionBar">
+                  <item name="android:windowBackground">#FFFFFFFF</item>
+                  <item name="android:statusBarColor">#FFFFFFFF</item>
+                  <item name="android:windowLightStatusBar">true</item>
+                  <item name="android:colorAccent">#FF2FB67E</item>
+              </style>
+          </resources>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/res/values-night/themes.xml"
+        run: |
+          mkdir -p "proj/app/src/main/res/values-night"
+          cat > "proj/app/src/main/res/values-night/themes.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <resources>
+              <style name="AppTheme" parent="android:Theme.Material.NoActionBar">
+                  <item name="android:windowBackground">#FF121214</item>
+                  <item name="android:statusBarColor">#FF121214</item>
+                  <item name="android:colorAccent">#FF2FB67E</item>
+              </style>
+          </resources>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/res/drawable/ic_bell.xml"
+        run: |
+          mkdir -p "proj/app/src/main/res/drawable"
+          cat > "proj/app/src/main/res/drawable/ic_bell.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:fillColor="#FF000000"
+                  android:pathData="M12,22c1.1,0 2,-0.9 2,-2h-4c0,1.1 0.89,2 2,2zM18,16v-5c0,-3.07 -1.64,-5.64 -4.5,-6.32V4c0,-0.83 -0.67,-1.5 -1.5,-1.5s-1.5,0.67 -1.5,1.5v0.68C7.63,5.36 6,7.92 6,11v5l-2,2v1h16v-1l-2,-2z" />
+          </vector>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/res/drawable/ic_music.xml"
+        run: |
+          mkdir -p "proj/app/src/main/res/drawable"
+          cat > "proj/app/src/main/res/drawable/ic_music.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:fillColor="#FF000000"
+                  android:pathData="M12,3v10.55c-0.59,-0.34 -1.27,-0.55 -2,-0.55 -2.21,0 -4,1.79 -4,4s1.79,4 4,4 4,-1.79 4,-4V7h4V3h-6z" />
+          </vector>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/res/drawable/ic_alarm.xml"
+        run: |
+          mkdir -p "proj/app/src/main/res/drawable"
+          cat > "proj/app/src/main/res/drawable/ic_alarm.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:fillColor="#FF000000"
+                  android:pathData="M22,5.72l-4.6,-3.86 -1.29,1.53 4.6,3.86L22,5.72zM7.88,3.39L6.6,1.86 2,5.71l1.29,1.53 4.59,-3.85zM12.5,8H11v6l4.75,2.85 0.75,-1.23 -4,-2.37V8zM12,4c-4.97,0 -9,4.03 -9,9s4.02,9 9,9c4.97,0 9,-4.03 9,-9s-4.03,-9 -9,-9zM12,20c-3.87,0 -7,-3.13 -7,-7s3.13,-7 7,-7 7,3.13 7,7 -3.13,7 -7,7z" />
+          </vector>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/res/drawable/ic_volume.xml"
+        run: |
+          mkdir -p "proj/app/src/main/res/drawable"
+          cat > "proj/app/src/main/res/drawable/ic_volume.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="24dp"
+              android:height="24dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <path
+                  android:fillColor="#FF000000"
+                  android:pathData="M3,9v6h4l5,5V4L7,9H3zM16.5,12c0,-1.77 -1.02,-3.29 -2.5,-4.03v8.05c1.48,-0.73 2.5,-2.25 2.5,-4.02zM14,3.23v2.06c2.89,0.86 5,3.54 5,6.71s-2.11,5.85 -5,6.71v2.06c4.01,-0.91 7,-4.49 7,-8.77s-2.99,-7.86 -7,-8.77z" />
+          </vector>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/res/drawable/ic_launcher_fg.xml"
+        run: |
+          mkdir -p "proj/app/src/main/res/drawable"
+          cat > "proj/app/src/main/res/drawable/ic_launcher_fg.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <vector xmlns:android="http://schemas.android.com/apk/res/android"
+              android:width="108dp"
+              android:height="108dp"
+              android:viewportWidth="24"
+              android:viewportHeight="24">
+              <group
+                  android:pivotX="12"
+                  android:pivotY="12"
+                  android:scaleX="0.55"
+                  android:scaleY="0.55">
+                  <path
+                      android:fillColor="#FFFFFFFF"
+                      android:pathData="M3,9v6h4l5,5V4L7,9H3zM16.5,12c0,-1.77 -1.02,-3.29 -2.5,-4.03v8.05c1.48,-0.73 2.5,-2.25 2.5,-4.02zM14,3.23v2.06c2.89,0.86 5,3.54 5,6.71s-2.11,5.85 -5,6.71v2.06c4.01,-0.91 7,-4.49 7,-8.77s-2.99,-7.86 -7,-8.77z" />
+              </group>
+          </vector>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml"
+        run: |
+          mkdir -p "proj/app/src/main/res/mipmap-anydpi-v26"
+          cat > "proj/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml" <<'__BERKAS_SELESAI__'
+          <?xml version="1.0" encoding="utf-8"?>
+          <adaptive-icon xmlns:android="http://schemas.android.com/apk/res/android">
+              <background android:drawable="@color/ic_bg" />
+              <foreground android:drawable="@drawable/ic_launcher_fg" />
+          </adaptive-icon>
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/java/com/pribadi/volume/Ui.java"
+        run: |
+          mkdir -p "proj/app/src/main/java/com/pribadi/volume"
+          cat > "proj/app/src/main/java/com/pribadi/volume/Ui.java" <<'__BERKAS_SELESAI__'
+          package com.pribadi.volume;
+
+          import android.content.Context;
+          import android.content.res.Configuration;
+
+          final class Ui {
+              static final int GREEN = 0xFF2FB67E;
+
+              private Ui() {}
+
+              static boolean dark(Context c) {
+                  int m = c.getResources().getConfiguration().uiMode & Configuration.UI_MODE_NIGHT_MASK;
+                  return m == Configuration.UI_MODE_NIGHT_YES;
+              }
+
+              static int dp(Context c, float v) {
+                  return Math.round(v * c.getResources().getDisplayMetrics().density);
+              }
+
+              static int bg(Context c) { return dark(c) ? 0xFF121214 : 0xFFFFFFFF; }
+              static int card(Context c) { return dark(c) ? 0xFF2B2D31 : 0xFFFFFFFF; }
+              static int surface(Context c) { return dark(c) ? 0xFF2B2D31 : 0xFFF1F3F4; }
+              static int text(Context c) { return dark(c) ? 0xFFE6E6E9 : 0xFF5F6368; }
+              static int soft(Context c) { return dark(c) ? 0xFFA0A4AA : 0xFF8A8F95; }
+              static int track(Context c) { return dark(c) ? 0xFF55585E : 0xFFD0D0D0; }
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/java/com/pribadi/volume/Prefs.java"
+        run: |
+          mkdir -p "proj/app/src/main/java/com/pribadi/volume"
+          cat > "proj/app/src/main/java/com/pribadi/volume/Prefs.java" <<'__BERKAS_SELESAI__'
+          package com.pribadi.volume;
+
+          import android.content.Context;
+          import android.content.SharedPreferences;
+
+          final class Prefs {
+              private Prefs() {}
+
+              private static SharedPreferences sp(Context c) {
+                  return c.getApplicationContext().getSharedPreferences("volume", Context.MODE_PRIVATE);
+              }
+
+              static boolean enabled(Context c) {
+                  return sp(c).getBoolean("enabled", false);
+              }
+
+              static void setEnabled(Context c, boolean v) {
+                  sp(c).edit().putBoolean("enabled", v).apply();
+              }
+
+              static boolean right(Context c) {
+                  return sp(c).getBoolean("right", true);
+              }
+
+              static int y(Context c, int def) {
+                  return sp(c).getInt("y", def);
+              }
+
+              static void setPos(Context c, boolean right, int y) {
+                  sp(c).edit().putBoolean("right", right).putInt("y", y).apply();
+              }
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/java/com/pribadi/volume/VolumeSlider.java"
+        run: |
+          mkdir -p "proj/app/src/main/java/com/pribadi/volume"
+          cat > "proj/app/src/main/java/com/pribadi/volume/VolumeSlider.java" <<'__BERKAS_SELESAI__'
+          package com.pribadi.volume;
+
+          import android.content.Context;
+          import android.graphics.Canvas;
+          import android.graphics.Paint;
+          import android.view.HapticFeedbackConstants;
+          import android.view.MotionEvent;
+          import android.view.View;
+
+          public class VolumeSlider extends View {
+              public interface Listener {
+                  void onChange(int value);
+              }
+
+              private final Paint paint = new Paint(Paint.ANTI_ALIAS_FLAG);
+              private final float dp;
+              private final int trackColor;
+              private int min = 0;
+              private int max = 1;
+              private int value = 0;
+              private boolean dragging = false;
+              private Listener listener;
+
+              public VolumeSlider(Context c) {
+                  super(c);
+                  dp = c.getResources().getDisplayMetrics().density;
+                  trackColor = Ui.track(c);
+                  paint.setStrokeCap(Paint.Cap.ROUND);
+              }
+
+              public void setListener(Listener l) {
+                  listener = l;
+              }
+
+              public void setRange(int newMin, int newMax) {
+                  min = newMin;
+                  max = Math.max(newMax, newMin + 1);
+                  value = clamp(value);
+                  invalidate();
+              }
+
+              public void forceValue(int v) {
+                  value = clamp(v);
+                  invalidate();
+              }
+
+              public int getValue() { return value; }
+              public int getMin() { return min; }
+              public int getMax() { return max; }
+              public boolean isDragging() { return dragging; }
+
+              private int clamp(int v) {
+                  return Math.max(min, Math.min(max, v));
+              }
+
+              private float pad() {
+                  return 18f * dp;
+              }
+
+              @Override
+              protected void onMeasure(int widthSpec, int heightSpec) {
+                  int w = resolveSize((int) (120 * dp), widthSpec);
+                  setMeasuredDimension(w, (int) (44 * dp));
+              }
+
+              @Override
+              protected void onDraw(Canvas canvas) {
+                  float left = pad();
+                  float right = getWidth() - pad();
+                  float cy = getHeight() / 2f;
+                  float frac = (value - min) / (float) (max - min);
+                  float x = left + (right - left) * frac;
+
+                  paint.setStyle(Paint.Style.STROKE);
+                  paint.setStrokeWidth(4f * dp);
+                  paint.setColor(trackColor);
+                  canvas.drawLine(left, cy, right, cy, paint);
+                  paint.setColor(Ui.GREEN);
+                  canvas.drawLine(left, cy, x, cy, paint);
+
+                  paint.setStyle(Paint.Style.FILL);
+                  float r = (dragging ? 14f : 12f) * dp;
+                  paint.setColor(0x14000000);
+                  canvas.drawCircle(x, cy + dp, r + 2.5f * dp, paint);
+                  paint.setColor(0x26000000);
+                  canvas.drawCircle(x, cy + 0.5f * dp, r + dp, paint);
+                  paint.setColor(0xFFFFFFFF);
+                  canvas.drawCircle(x, cy, r, paint);
+              }
+
+              @Override
+              public boolean onTouchEvent(MotionEvent e) {
+                  switch (e.getActionMasked()) {
+                      case MotionEvent.ACTION_DOWN:
+                          if (getParent() != null) getParent().requestDisallowInterceptTouchEvent(true);
+                          dragging = true;
+                          update(e.getX());
+                          return true;
+                      case MotionEvent.ACTION_MOVE:
+                          update(e.getX());
+                          return true;
+                      case MotionEvent.ACTION_UP:
+                      case MotionEvent.ACTION_CANCEL:
+                          dragging = false;
+                          invalidate();
+                          return true;
+                      default:
+                          return super.onTouchEvent(e);
+                  }
+              }
+
+              private void update(float x) {
+                  float left = pad();
+                  float right = getWidth() - pad();
+                  float f = (x - left) / (right - left);
+                  if (f < 0f) f = 0f;
+                  if (f > 1f) f = 1f;
+                  int v = min + Math.round(f * (max - min));
+                  if (v != value) {
+                      value = v;
+                      performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK);
+                      if (listener != null) listener.onChange(v);
+                  }
+                  invalidate();
+              }
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/java/com/pribadi/volume/VolumePanel.java"
+        run: |
+          mkdir -p "proj/app/src/main/java/com/pribadi/volume"
+          cat > "proj/app/src/main/java/com/pribadi/volume/VolumePanel.java" <<'__BERKAS_SELESAI__'
+          package com.pribadi.volume;
+
+          import android.content.Context;
+          import android.database.ContentObserver;
+          import android.media.AudioManager;
+          import android.os.Build;
+          import android.os.Handler;
+          import android.os.Looper;
+          import android.provider.Settings;
+          import android.util.TypedValue;
+          import android.view.Gravity;
+          import android.view.View;
+          import android.widget.ImageView;
+          import android.widget.LinearLayout;
+          import android.widget.TextView;
+
+          public class VolumePanel extends LinearLayout {
+              private static final int[] STREAMS = {
+                      AudioManager.STREAM_RING, AudioManager.STREAM_MUSIC, AudioManager.STREAM_ALARM};
+              private static final String[] NAMES = {"Dering", "Media", "Alarm"};
+              private static final int[] ICONS = {R.drawable.ic_bell, R.drawable.ic_music, R.drawable.ic_alarm};
+
+              private final AudioManager am;
+              private final Runnable onNeedDnd;
+              private final VolumeSlider[] sliders = new VolumeSlider[3];
+              private final TextView[] valueViews = new TextView[3];
+              private boolean dndAsked = false;
+
+              private final ContentObserver observer =
+                      new ContentObserver(new Handler(Looper.getMainLooper())) {
+                          @Override
+                          public void onChange(boolean selfChange) {
+                              refresh();
+                          }
+                      };
+
+              public VolumePanel(Context c, Runnable onNeedDnd) {
+                  super(c);
+                  this.onNeedDnd = onNeedDnd;
+                  this.am = (AudioManager) c.getSystemService(Context.AUDIO_SERVICE);
+                  setOrientation(VERTICAL);
+                  for (int i = 0; i < 3; i++) {
+                      LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                              LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                      if (i > 0) lp.topMargin = Ui.dp(c, 14);
+                      addView(buildRow(c, i), lp);
+                  }
+                  refresh();
+              }
+
+              private View buildRow(Context c, final int i) {
+                  LinearLayout row = new LinearLayout(c);
+                  row.setOrientation(VERTICAL);
+
+                  LinearLayout head = new LinearLayout(c);
+                  head.setOrientation(HORIZONTAL);
+                  TextView name = label(c, NAMES[i], 15, Ui.text(c));
+                  TextView val = label(c, "", 13, Ui.soft(c));
+                  val.setGravity(Gravity.END);
+                  valueViews[i] = val;
+                  head.addView(name, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                  head.addView(val, new LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.WRAP_CONTENT, LinearLayout.LayoutParams.WRAP_CONTENT));
+
+                  LinearLayout line = new LinearLayout(c);
+                  line.setOrientation(HORIZONTAL);
+                  line.setGravity(Gravity.CENTER_VERTICAL);
+
+                  VolumeSlider slider = new VolumeSlider(c);
+                  slider.setRange(minVolume(STREAMS[i]), am.getStreamMaxVolume(STREAMS[i]));
+                  slider.setListener(v -> apply(i, v));
+                  sliders[i] = slider;
+
+                  line.addView(icon(c, ICONS[i]), new LinearLayout.LayoutParams(Ui.dp(c, 18), Ui.dp(c, 18)));
+                  line.addView(slider, new LinearLayout.LayoutParams(0, LinearLayout.LayoutParams.WRAP_CONTENT, 1f));
+                  line.addView(icon(c, ICONS[i]), new LinearLayout.LayoutParams(Ui.dp(c, 26), Ui.dp(c, 26)));
+
+                  row.addView(head);
+                  row.addView(line);
+                  return row;
+              }
+
+              private int minVolume(int stream) {
+                  if (Build.VERSION.SDK_INT >= 28) return am.getStreamMinVolume(stream);
+                  return stream == AudioManager.STREAM_ALARM ? 1 : 0;
+              }
+
+              private void apply(int i, int v) {
+                  int stream = STREAMS[i];
+                  int flags = stream == AudioManager.STREAM_RING ? AudioManager.FLAG_ALLOW_RINGER_MODES : 0;
+                  try {
+                      am.setStreamVolume(stream, v, flags);
+                  } catch (SecurityException e) {
+                      sliders[i].forceValue(readVolume(i));
+                      if (!dndAsked) {
+                          dndAsked = true;
+                          if (onNeedDnd != null) onNeedDnd.run();
+                      }
+                  } catch (RuntimeException ignored) {
+                  }
+                  showValue(i);
+              }
+
+              private int readVolume(int i) {
+                  int stream = STREAMS[i];
+                  if (stream == AudioManager.STREAM_RING
+                          && am.getRingerMode() != AudioManager.RINGER_MODE_NORMAL) {
+                      return sliders[i].getMin();
+                  }
+                  return am.getStreamVolume(stream);
+              }
+
+              private void showValue(int i) {
+                  String t;
+                  boolean ring = STREAMS[i] == AudioManager.STREAM_RING;
+                  int mode = am.getRingerMode();
+                  if (ring && mode == AudioManager.RINGER_MODE_VIBRATE) {
+                      t = "Getar";
+                  } else if (ring && mode == AudioManager.RINGER_MODE_SILENT) {
+                      t = "Senyap";
+                  } else {
+                      t = sliders[i].getValue() + "/" + sliders[i].getMax();
+                  }
+                  valueViews[i].setText(t);
+              }
+
+              public void refresh() {
+                  for (int i = 0; i < 3; i++) {
+                      if (sliders[i] == null || sliders[i].isDragging()) continue;
+                      sliders[i].forceValue(readVolume(i));
+                      showValue(i);
+                  }
+              }
+
+              @Override
+              protected void onAttachedToWindow() {
+                  super.onAttachedToWindow();
+                  getContext().getContentResolver()
+                          .registerContentObserver(Settings.System.CONTENT_URI, true, observer);
+                  refresh();
+              }
+
+              @Override
+              protected void onDetachedFromWindow() {
+                  getContext().getContentResolver().unregisterContentObserver(observer);
+                  super.onDetachedFromWindow();
+              }
+
+              private static TextView label(Context c, String s, float sp, int color) {
+                  TextView t = new TextView(c);
+                  t.setText(s);
+                  t.setTextSize(TypedValue.COMPLEX_UNIT_SP, sp);
+                  t.setTextColor(color);
+                  return t;
+              }
+
+              private static ImageView icon(Context c, int res) {
+                  ImageView v = new ImageView(c);
+                  v.setImageResource(res);
+                  v.setColorFilter(Ui.soft(c));
+                  return v;
+              }
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/java/com/pribadi/volume/BubbleService.java"
+        run: |
+          mkdir -p "proj/app/src/main/java/com/pribadi/volume"
+          cat > "proj/app/src/main/java/com/pribadi/volume/BubbleService.java" <<'__BERKAS_SELESAI__'
+          package com.pribadi.volume;
+
+          import android.app.Notification;
+          import android.app.NotificationChannel;
+          import android.app.NotificationManager;
+          import android.app.PendingIntent;
+          import android.app.Service;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.pm.ServiceInfo;
+          import android.content.res.Configuration;
+          import android.graphics.Color;
+          import android.graphics.PixelFormat;
+          import android.graphics.drawable.GradientDrawable;
+          import android.graphics.drawable.Icon;
+          import android.os.Build;
+          import android.os.Handler;
+          import android.os.IBinder;
+          import android.os.Looper;
+          import android.provider.Settings;
+          import android.view.Gravity;
+          import android.view.MotionEvent;
+          import android.view.View;
+          import android.view.ViewConfiguration;
+          import android.view.WindowManager;
+          import android.widget.FrameLayout;
+          import android.widget.ImageView;
+          import android.widget.Toast;
+
+          public class BubbleService extends Service {
+              static final String ACTION_STOP = "com.pribadi.volume.STOP";
+              private static final String CHANNEL = "bubble";
+              private static final int NOTIF_ID = 1;
+              static volatile boolean running = false;
+
+              private final Handler main = new Handler(Looper.getMainLooper());
+              private WindowManager wm;
+              private FrameLayout bubble;
+              private WindowManager.LayoutParams bubbleLp;
+              private FrameLayout scrim;
+              private int size;
+              private boolean right = true;
+              private int touchSlop;
+              private float downX;
+              private float downY;
+              private int startX;
+              private int startY;
+              private boolean moved;
+
+              static void start(Context c) {
+                  c.startForegroundService(new Intent(c, BubbleService.class));
+              }
+
+              static void stop(Context c) {
+                  c.stopService(new Intent(c, BubbleService.class));
+              }
+
+              @Override
+              public IBinder onBind(Intent intent) {
+                  return null;
+              }
+
+              @Override
+              public void onCreate() {
+                  super.onCreate();
+                  running = true;
+                  wm = (WindowManager) getSystemService(Context.WINDOW_SERVICE);
+                  size = Ui.dp(this, 48);
+                  touchSlop = ViewConfiguration.get(this).getScaledTouchSlop();
+              }
+
+              @Override
+              public int onStartCommand(Intent intent, int flags, int startId) {
+                  if (!startAsForeground()) {
+                      stopSelf();
+                      return START_NOT_STICKY;
+                  }
+                  if (intent != null && ACTION_STOP.equals(intent.getAction())) {
+                      Prefs.setEnabled(this, false);
+                      stopSelf();
+                      return START_NOT_STICKY;
+                  }
+                  if (!Settings.canDrawOverlays(this)) {
+                      stopSelf();
+                      return START_NOT_STICKY;
+                  }
+                  showBubble();
+                  return START_STICKY;
+              }
+
+              private boolean startAsForeground() {
+                  try {
+                      Notification n = buildNotification();
+                      if (Build.VERSION.SDK_INT >= 34) {
+                          startForeground(NOTIF_ID, n, ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE);
+                      } else {
+                          startForeground(NOTIF_ID, n);
+                      }
+                      return true;
+                  } catch (RuntimeException e) {
+                      return false;
+                  }
+              }
+
+              private Notification buildNotification() {
+                  NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                  nm.createNotificationChannel(new NotificationChannel(
+                          CHANNEL, "Gelembung volume", NotificationManager.IMPORTANCE_LOW));
+
+                  PendingIntent open = PendingIntent.getActivity(this, 0,
+                          new Intent(this, MainActivity.class),
+                          PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+                  PendingIntent stop = PendingIntent.getService(this, 1,
+                          new Intent(this, BubbleService.class).setAction(ACTION_STOP),
+                          PendingIntent.FLAG_IMMUTABLE | PendingIntent.FLAG_UPDATE_CURRENT);
+
+                  return new Notification.Builder(this, CHANNEL)
+                          .setSmallIcon(R.drawable.ic_volume)
+                          .setContentTitle("Gelembung volume aktif")
+                          .setContentText("Ketuk untuk membuka aplikasi")
+                          .setContentIntent(open)
+                          .setOngoing(true)
+                          .addAction(new Notification.Action.Builder(
+                                  Icon.createWithResource(this, R.drawable.ic_volume), "Matikan", stop).build())
+                          .build();
+              }
+
+              private int screenW() {
+                  return getResources().getDisplayMetrics().widthPixels;
+              }
+
+              private int screenH() {
+                  return getResources().getDisplayMetrics().heightPixels;
+              }
+
+              private int clampX(int x) {
+                  return Math.max(0, Math.min(screenW() - size, x));
+              }
+
+              private int clampY(int y) {
+                  return Math.max(0, Math.min(screenH() - size, y));
+              }
+
+              private void showBubble() {
+                  if (bubble != null) return;
+
+                  bubble = new FrameLayout(this);
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setShape(GradientDrawable.OVAL);
+                  bg.setColor(Ui.GREEN);
+                  bubble.setBackground(bg);
+                  bubble.setAlpha(0.85f);
+
+                  ImageView icon = new ImageView(this);
+                  icon.setImageResource(R.drawable.ic_volume);
+                  icon.setColorFilter(Color.WHITE);
+                  int p = Ui.dp(this, 12);
+                  icon.setPadding(p, p, p, p);
+                  bubble.addView(icon, new FrameLayout.LayoutParams(size, size));
+
+                  bubbleLp = new WindowManager.LayoutParams(size, size,
+                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                          PixelFormat.TRANSLUCENT);
+                  bubbleLp.gravity = Gravity.TOP | Gravity.START;
+                  right = Prefs.right(this);
+                  bubbleLp.x = right ? screenW() - size : 0;
+                  bubbleLp.y = clampY(Prefs.y(this, screenH() / 3));
+
+                  bubble.setOnTouchListener(this::onBubbleTouch);
+                  try {
+                      wm.addView(bubble, bubbleLp);
+                  } catch (RuntimeException e) {
+                      bubble = null;
+                      stopSelf();
+                  }
+              }
+
+              private boolean onBubbleTouch(View v, MotionEvent e) {
+                  switch (e.getActionMasked()) {
+                      case MotionEvent.ACTION_DOWN:
+                          downX = e.getRawX();
+                          downY = e.getRawY();
+                          startX = bubbleLp.x;
+                          startY = bubbleLp.y;
+                          moved = false;
+                          return true;
+                      case MotionEvent.ACTION_MOVE: {
+                          float dx = e.getRawX() - downX;
+                          float dy = e.getRawY() - downY;
+                          if (!moved && Math.hypot(dx, dy) > touchSlop) moved = true;
+                          if (moved) {
+                              bubbleLp.x = clampX(startX + (int) dx);
+                              bubbleLp.y = clampY(startY + (int) dy);
+                              updateBubble();
+                          }
+                          return true;
+                      }
+                      case MotionEvent.ACTION_UP:
+                          if (moved) {
+                              snapToEdge();
+                          } else {
+                              togglePanel();
+                          }
+                          return true;
+                      case MotionEvent.ACTION_CANCEL:
+                          if (moved) snapToEdge();
+                          return true;
+                      default:
+                          return false;
+                  }
+              }
+
+              private void snapToEdge() {
+                  right = bubbleLp.x + size / 2 > screenW() / 2;
+                  bubbleLp.x = right ? screenW() - size : 0;
+                  bubbleLp.y = clampY(bubbleLp.y);
+                  updateBubble();
+                  Prefs.setPos(this, right, bubbleLp.y);
+              }
+
+              private void updateBubble() {
+                  if (bubble == null) return;
+                  try {
+                      wm.updateViewLayout(bubble, bubbleLp);
+                  } catch (RuntimeException ignored) {
+                  }
+              }
+
+              private void togglePanel() {
+                  if (scrim == null) {
+                      showPanel();
+                  } else {
+                      hidePanel();
+                  }
+              }
+
+              private void showPanel() {
+                  if (scrim != null || bubble == null) return;
+
+                  scrim = new FrameLayout(this);
+                  scrim.setBackgroundColor(0x33000000);
+                  scrim.setOnClickListener(v -> hidePanel());
+
+                  FrameLayout card = new FrameLayout(this);
+                  GradientDrawable cardBg = new GradientDrawable();
+                  cardBg.setColor(Ui.card(this));
+                  cardBg.setCornerRadius(Ui.dp(this, 24));
+                  card.setBackground(cardBg);
+                  card.setClickable(true);
+                  int pad = Ui.dp(this, 20);
+                  card.setPadding(pad, pad, pad, Ui.dp(this, 14));
+                  card.addView(new VolumePanel(this, this::onNeedDnd), new FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+                  int w = Math.min(Ui.dp(this, 360), (int) (screenW() * 0.92f));
+                  scrim.addView(card, new FrameLayout.LayoutParams(
+                          w, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+
+                  WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
+                          WindowManager.LayoutParams.MATCH_PARENT,
+                          WindowManager.LayoutParams.MATCH_PARENT,
+                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
+                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
+                                  | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
+                          PixelFormat.TRANSLUCENT);
+                  try {
+                      wm.addView(scrim, lp);
+                      bubble.setVisibility(View.GONE);
+                  } catch (RuntimeException e) {
+                      scrim = null;
+                  }
+              }
+
+              private void hidePanel() {
+                  if (scrim != null) {
+                      try {
+                          wm.removeView(scrim);
+                      } catch (RuntimeException ignored) {
+                      }
+                      scrim = null;
+                  }
+                  if (bubble != null) bubble.setVisibility(View.VISIBLE);
+              }
+
+              private void onNeedDnd() {
+                  main.post(() -> {
+                      Toast.makeText(this, "Beri izin Jangan Ganggu agar Dering bisa disenyapkan",
+                              Toast.LENGTH_LONG).show();
+                      hidePanel();
+                      try {
+                          startActivity(new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
+                                  .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                      } catch (RuntimeException ignored) {
+                      }
+                  });
+              }
+
+              @Override
+              public void onConfigurationChanged(Configuration newConfig) {
+                  super.onConfigurationChanged(newConfig);
+                  hidePanel();
+                  if (bubble != null) {
+                      bubbleLp.x = right ? screenW() - size : 0;
+                      bubbleLp.y = clampY(bubbleLp.y);
+                      updateBubble();
+                  }
+              }
+
+              @Override
+              public void onDestroy() {
+                  running = false;
+                  hidePanel();
+                  if (bubble != null) {
+                      try {
+                          wm.removeView(bubble);
+                      } catch (RuntimeException ignored) {
+                      }
+                      bubble = null;
+                  }
+                  super.onDestroy();
+              }
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/java/com/pribadi/volume/MainActivity.java"
+        run: |
+          mkdir -p "proj/app/src/main/java/com/pribadi/volume"
+          cat > "proj/app/src/main/java/com/pribadi/volume/MainActivity.java" <<'__BERKAS_SELESAI__'
+          package com.pribadi.volume;
+
+          import android.Manifest;
+          import android.app.Activity;
+          import android.app.NotificationManager;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.content.pm.PackageManager;
+          import android.graphics.Color;
+          import android.graphics.Typeface;
+          import android.graphics.drawable.GradientDrawable;
+          import android.net.Uri;
+          import android.os.Build;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.util.TypedValue;
+          import android.view.View;
+          import android.widget.Button;
+          import android.widget.LinearLayout;
+          import android.widget.ScrollView;
+          import android.widget.TextView;
+          import android.widget.Toast;
+
+          public class MainActivity extends Activity {
+              private VolumePanel panel;
+              private Button toggleBtn;
+              private Button dndBtn;
+              private boolean wantStart = false;
+
+              @Override
+              protected void onCreate(Bundle state) {
+                  super.onCreate(state);
+
+                  int pad = Ui.dp(this, 24);
+                  ScrollView scroll = new ScrollView(this);
+                  scroll.setFillViewport(true);
+
+                  LinearLayout root = new LinearLayout(this);
+                  root.setOrientation(LinearLayout.VERTICAL);
+                  root.setPadding(pad, Ui.dp(this, 36), pad, pad);
+                  scroll.addView(root);
+
+                  TextView title = new TextView(this);
+                  title.setText("Volume");
+                  title.setTextSize(TypedValue.COMPLEX_UNIT_SP, 28);
+                  title.setTextColor(Ui.text(this));
+                  title.setTypeface(Typeface.DEFAULT_BOLD);
+                  root.addView(title);
+
+                  panel = new VolumePanel(this, this::onNeedDnd);
+                  root.addView(panel, params(28));
+
+                  toggleBtn = button("", true);
+                  toggleBtn.setOnClickListener(v -> onToggle());
+                  root.addView(toggleBtn, params(36));
+
+                  dndBtn = button("Izinkan akses Jangan Ganggu", false);
+                  dndBtn.setOnClickListener(v -> openDndSettings());
+                  root.addView(dndBtn, params(12));
+
+                  TextView hint = new TextView(this);
+                  hint.setText("Ketuk gelembung hijau untuk membuka slider. "
+                          + "Tahan dan seret gelembung untuk memindahkannya.");
+                  hint.setTextSize(TypedValue.COMPLEX_UNIT_SP, 13);
+                  hint.setTextColor(Ui.soft(this));
+                  root.addView(hint, params(20));
+
+                  setContentView(scroll);
+
+                  if (Build.VERSION.SDK_INT >= 33
+                          && checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS)
+                          != PackageManager.PERMISSION_GRANTED) {
+                      requestPermissions(new String[]{Manifest.permission.POST_NOTIFICATIONS}, 1);
+                  }
+              }
+
+              @Override
+              protected void onResume() {
+                  super.onResume();
+                  if (wantStart) {
+                      wantStart = false;
+                      if (Settings.canDrawOverlays(this)) {
+                          startBubble();
+                          toggleBtn.postDelayed(this::updateUi, 400);
+                      }
+                  }
+                  updateUi();
+              }
+
+              private LinearLayout.LayoutParams params(int topDp) {
+                  LinearLayout.LayoutParams lp = new LinearLayout.LayoutParams(
+                          LinearLayout.LayoutParams.MATCH_PARENT, LinearLayout.LayoutParams.WRAP_CONTENT);
+                  lp.topMargin = Ui.dp(this, topDp);
+                  return lp;
+              }
+
+              private Button button(String text, boolean primary) {
+                  Button b = new Button(this);
+                  b.setText(text);
+                  b.setAllCaps(false);
+                  b.setTextSize(TypedValue.COMPLEX_UNIT_SP, 15);
+                  b.setMinHeight(Ui.dp(this, 52));
+                  b.setStateListAnimator(null);
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setCornerRadius(Ui.dp(this, 26));
+                  bg.setColor(primary ? Ui.GREEN : Ui.surface(this));
+                  b.setBackground(bg);
+                  b.setTextColor(primary ? Color.WHITE : Ui.text(this));
+                  return b;
+              }
+
+              private void onToggle() {
+                  if (BubbleService.running) {
+                      Prefs.setEnabled(this, false);
+                      BubbleService.stop(this);
+                  } else if (!Settings.canDrawOverlays(this)) {
+                      wantStart = true;
+                      startActivity(new Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                              Uri.parse("package:" + getPackageName())));
+                  } else {
+                      startBubble();
+                  }
+                  toggleBtn.postDelayed(this::updateUi, 400);
+              }
+
+              private void startBubble() {
+                  Prefs.setEnabled(this, true);
+                  BubbleService.start(this);
+              }
+
+              private void onNeedDnd() {
+                  Toast.makeText(this, "Beri izin Jangan Ganggu agar Dering bisa disenyapkan",
+                          Toast.LENGTH_LONG).show();
+                  openDndSettings();
+              }
+
+              private void openDndSettings() {
+                  try {
+                      startActivity(new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS));
+                  } catch (RuntimeException ignored) {
+                  }
+              }
+
+              private void updateUi() {
+                  if (BubbleService.running) {
+                      toggleBtn.setText("Matikan gelembung");
+                  } else if (Settings.canDrawOverlays(this)) {
+                      toggleBtn.setText("Aktifkan gelembung");
+                  } else {
+                      toggleBtn.setText("Izinkan & aktifkan gelembung");
+                  }
+                  NotificationManager nm = (NotificationManager) getSystemService(Context.NOTIFICATION_SERVICE);
+                  boolean dndOk = nm != null && nm.isNotificationPolicyAccessGranted();
+                  dndBtn.setVisibility(dndOk ? View.GONE : View.VISIBLE);
+                  panel.refresh();
+              }
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/java/com/pribadi/volume/BootReceiver.java"
+        run: |
+          mkdir -p "proj/app/src/main/java/com/pribadi/volume"
+          cat > "proj/app/src/main/java/com/pribadi/volume/BootReceiver.java" <<'__BERKAS_SELESAI__'
+          package com.pribadi.volume;
+
+          import android.content.BroadcastReceiver;
+          import android.content.Context;
+          import android.content.Intent;
+          import android.provider.Settings;
+
+          public class BootReceiver extends BroadcastReceiver {
+              @Override
+              public void onReceive(Context c, Intent i) {
+                  if (i == null || !Intent.ACTION_BOOT_COMPLETED.equals(i.getAction())) return;
+                  if (Prefs.enabled(c) && Settings.canDrawOverlays(c)) {
+                      try {
+                          BubbleService.start(c);
+                      } catch (RuntimeException ignored) {
+                      }
+                  }
+              }
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis kunci penanda tangan (tetap, supaya update APK tidak bentrok)"
+        run: |
+          mkdir -p proj/app
+          base64 -d > proj/app/debug.keystore <<'__BERKAS_SELESAI__'
+          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
+          __BERKAS_SELESAI__
+
+      - name: Build APK
+        working-directory: proj
+        run: $GITHUB_WORKSPACE/gradle-8.10.2/bin/gradle assembleDebug --no-daemon --stacktrace
+
+      - name: Siapkan berkas APK
+        run: cp proj/app/build/outputs/apk/debug/app-debug.apk VolumeSlider.apk
+
+      - name: Simpan APK sebagai artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: VolumeSlider-APK
+          path: VolumeSlider.apk
+
+      - name: Buat Release supaya APK bisa diunduh langsung
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "apk-${{ github.run_number }}" VolumeSlider.apk \
+            --repo "${{ github.repository }}" \
+            --target "${{ github.sha }}" \
+            --title "Volume Slider #${{ github.run_number }}" \
+            --notes "APK siap dipasang. Unduh VolumeSlider.apk di bawah."
