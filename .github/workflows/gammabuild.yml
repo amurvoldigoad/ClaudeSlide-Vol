@@ -141,6 +141,14 @@ jobs:
                       </intent-filter>
                   </activity>
 
+                  <activity
+                      android:name=".PanelActivity"
+                      android:exported="false"
+                      android:theme="@style/PanelTheme"
+                      android:launchMode="singleTask"
+                      android:taskAffinity=""
+                      android:excludeFromRecents="true" />
+
                   <service
                       android:name=".BubbleService"
                       android:exported="false"
@@ -183,6 +191,16 @@ jobs:
                   <item name="android:windowLightStatusBar">true</item>
                   <item name="android:colorAccent">#FF2FB67E</item>
               </style>
+
+              <style name="PanelTheme" parent="android:Theme.Material.Light.NoActionBar">
+                  <item name="android:windowIsTranslucent">true</item>
+                  <item name="android:windowBackground">@android:color/transparent</item>
+                  <item name="android:backgroundDimEnabled">false</item>
+                  <item name="android:windowContentOverlay">@null</item>
+                  <item name="android:windowAnimationStyle">@null</item>
+                  <item name="android:statusBarColor">@android:color/transparent</item>
+                  <item name="android:navigationBarColor">@android:color/transparent</item>
+              </style>
           </resources>
           __BERKAS_SELESAI__
 
@@ -196,6 +214,16 @@ jobs:
                   <item name="android:windowBackground">#FF121214</item>
                   <item name="android:statusBarColor">#FF121214</item>
                   <item name="android:colorAccent">#FF2FB67E</item>
+              </style>
+
+              <style name="PanelTheme" parent="android:Theme.Material.NoActionBar">
+                  <item name="android:windowIsTranslucent">true</item>
+                  <item name="android:windowBackground">@android:color/transparent</item>
+                  <item name="android:backgroundDimEnabled">false</item>
+                  <item name="android:windowContentOverlay">@null</item>
+                  <item name="android:windowAnimationStyle">@null</item>
+                  <item name="android:statusBarColor">@android:color/transparent</item>
+                  <item name="android:navigationBarColor">@android:color/transparent</item>
               </style>
           </resources>
           __BERKAS_SELESAI__
@@ -688,9 +716,7 @@ jobs:
           import android.graphics.drawable.GradientDrawable;
           import android.graphics.drawable.Icon;
           import android.os.Build;
-          import android.os.Handler;
           import android.os.IBinder;
-          import android.os.Looper;
           import android.provider.Settings;
           import android.view.Gravity;
           import android.view.MotionEvent;
@@ -699,7 +725,6 @@ jobs:
           import android.view.WindowManager;
           import android.widget.FrameLayout;
           import android.widget.ImageView;
-          import android.widget.Toast;
 
           public class BubbleService extends Service {
               static final String ACTION_STOP = "com.pribadi.volume.STOP";
@@ -707,11 +732,9 @@ jobs:
               private static final int NOTIF_ID = 1;
               static volatile boolean running = false;
 
-              private final Handler main = new Handler(Looper.getMainLooper());
               private WindowManager wm;
               private FrameLayout bubble;
               private WindowManager.LayoutParams bubbleLp;
-              private FrameLayout scrim;
               private int size;
               private boolean right = true;
               private int touchSlop;
@@ -903,80 +926,25 @@ jobs:
                   }
               }
 
+              // Volume sekarang diatur dari Activity yang terlihat (PanelActivity).
+              // Sejak Android 12 (dan makin ketat di Android 17), perubahan volume dari
+              // service latar belakang diabaikan sistem tanpa pesan error.
               private void togglePanel() {
-                  if (scrim == null) {
-                      showPanel();
-                  } else {
-                      hidePanel();
+                  PanelActivity open = PanelActivity.current;
+                  if (open != null) {
+                      open.finish();
+                      return;
                   }
-              }
-
-              private void showPanel() {
-                  if (scrim != null || bubble == null) return;
-
-                  scrim = new FrameLayout(this);
-                  scrim.setBackgroundColor(0x33000000);
-                  scrim.setOnClickListener(v -> hidePanel());
-
-                  FrameLayout card = new FrameLayout(this);
-                  GradientDrawable cardBg = new GradientDrawable();
-                  cardBg.setColor(Ui.card(this));
-                  cardBg.setCornerRadius(Ui.dp(this, 24));
-                  card.setBackground(cardBg);
-                  card.setClickable(true);
-                  int pad = Ui.dp(this, 20);
-                  card.setPadding(pad, pad, pad, Ui.dp(this, 14));
-                  card.addView(new VolumePanel(this, this::onNeedDnd), new FrameLayout.LayoutParams(
-                          FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
-
-                  int w = Math.min(Ui.dp(this, 360), (int) (screenW() * 0.92f));
-                  scrim.addView(card, new FrameLayout.LayoutParams(
-                          w, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
-
-                  WindowManager.LayoutParams lp = new WindowManager.LayoutParams(
-                          WindowManager.LayoutParams.MATCH_PARENT,
-                          WindowManager.LayoutParams.MATCH_PARENT,
-                          WindowManager.LayoutParams.TYPE_APPLICATION_OVERLAY,
-                          WindowManager.LayoutParams.FLAG_NOT_FOCUSABLE
-                                  | WindowManager.LayoutParams.FLAG_LAYOUT_IN_SCREEN
-                                  | WindowManager.LayoutParams.FLAG_LAYOUT_NO_LIMITS,
-                          PixelFormat.TRANSLUCENT);
                   try {
-                      wm.addView(scrim, lp);
-                      bubble.setVisibility(View.GONE);
-                  } catch (RuntimeException e) {
-                      scrim = null;
+                      startActivity(new Intent(this, PanelActivity.class)
+                              .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
+                  } catch (RuntimeException ignored) {
                   }
-              }
-
-              private void hidePanel() {
-                  if (scrim != null) {
-                      try {
-                          wm.removeView(scrim);
-                      } catch (RuntimeException ignored) {
-                      }
-                      scrim = null;
-                  }
-                  if (bubble != null) bubble.setVisibility(View.VISIBLE);
-              }
-
-              private void onNeedDnd() {
-                  main.post(() -> {
-                      Toast.makeText(this, "Beri izin Jangan Ganggu agar Dering bisa disenyapkan",
-                              Toast.LENGTH_LONG).show();
-                      hidePanel();
-                      try {
-                          startActivity(new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS)
-                                  .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK));
-                      } catch (RuntimeException ignored) {
-                      }
-                  });
               }
 
               @Override
               public void onConfigurationChanged(Configuration newConfig) {
                   super.onConfigurationChanged(newConfig);
-                  hidePanel();
                   if (bubble != null) {
                       bubbleLp.x = right ? screenW() - size : 0;
                       bubbleLp.y = clampY(bubbleLp.y);
@@ -987,7 +955,6 @@ jobs:
               @Override
               public void onDestroy() {
                   running = false;
-                  hidePanel();
                   if (bubble != null) {
                       try {
                           wm.removeView(bubble);
@@ -995,6 +962,75 @@ jobs:
                       }
                       bubble = null;
                   }
+                  super.onDestroy();
+              }
+          }
+          __BERKAS_SELESAI__
+
+      - name: "Tulis app/src/main/java/com/pribadi/volume/PanelActivity.java"
+        run: |
+          mkdir -p "proj/app/src/main/java/com/pribadi/volume"
+          cat > "proj/app/src/main/java/com/pribadi/volume/PanelActivity.java" <<'__BERKAS_SELESAI__'
+          package com.pribadi.volume;
+
+          import android.app.Activity;
+          import android.content.Intent;
+          import android.graphics.drawable.GradientDrawable;
+          import android.os.Bundle;
+          import android.provider.Settings;
+          import android.view.Gravity;
+          import android.widget.FrameLayout;
+          import android.widget.Toast;
+
+          public class PanelActivity extends Activity {
+              static PanelActivity current;
+
+              @Override
+              protected void onCreate(Bundle state) {
+                  super.onCreate(state);
+                  current = this;
+
+                  FrameLayout root = new FrameLayout(this);
+                  root.setBackgroundColor(0x33000000);
+                  root.setOnClickListener(v -> finish());
+
+                  FrameLayout card = new FrameLayout(this);
+                  GradientDrawable bg = new GradientDrawable();
+                  bg.setColor(Ui.card(this));
+                  bg.setCornerRadius(Ui.dp(this, 24));
+                  card.setBackground(bg);
+                  card.setClickable(true);
+                  int pad = Ui.dp(this, 20);
+                  card.setPadding(pad, pad, pad, Ui.dp(this, 14));
+                  card.addView(new VolumePanel(this, this::onNeedDnd), new FrameLayout.LayoutParams(
+                          FrameLayout.LayoutParams.MATCH_PARENT, FrameLayout.LayoutParams.WRAP_CONTENT));
+
+                  int screenW = getResources().getDisplayMetrics().widthPixels;
+                  int w = Math.min(Ui.dp(this, 360), (int) (screenW * 0.92f));
+                  root.addView(card, new FrameLayout.LayoutParams(
+                          w, FrameLayout.LayoutParams.WRAP_CONTENT, Gravity.CENTER));
+                  setContentView(root);
+              }
+
+              private void onNeedDnd() {
+                  Toast.makeText(this, "Beri izin Jangan Ganggu agar Dering bisa disenyapkan",
+                          Toast.LENGTH_LONG).show();
+                  try {
+                      startActivity(new Intent(Settings.ACTION_NOTIFICATION_POLICY_ACCESS_SETTINGS));
+                  } catch (RuntimeException ignored) {
+                  }
+                  finish();
+              }
+
+              @Override
+              protected void onStop() {
+                  super.onStop();
+                  if (!isFinishing()) finish();
+              }
+
+              @Override
+              protected void onDestroy() {
+                  if (current == this) current = null;
                   super.onDestroy();
               }
           }
